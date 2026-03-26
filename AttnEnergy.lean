@@ -183,17 +183,73 @@ section FECGConnection
 
 variable {n d : ℕ}
 
+-- State space abbreviation
+abbrev TwoTokenState (d : ℕ) := EuclideanSpace ℝ (Fin d) × EuclideanSpace ℝ (Fin d)
+
 /--
-FECG 连接（论文用）
+FECG 连接：Two-token 注意力轨道收敛
 
-Two-token 定理说明：注意力前向传播使 token 表征之间的
-距离严格收缩，因此满足 FECG 框架的能量单调性条件。
+设初始状态 (v₁⁽⁰⁾, v₂⁽⁰⁾)，‖vᵢ⁽⁰⁾‖=1。
+注意力迭代：v₁⁽ᵏ⁺¹⁾, v₂⁽ᵏ⁺¹⁾ = Attn(v₁⁽ᵏ⁾, v₂⁽ᵏ⁾)。
 
-吸引子：{x | x₁=...=xₙ}（所有 token 收敛到相同表示）
-吸引域：ℝ^{n×d}（全局）
+由 two_token_energy_decreases：
+  Eₖ = (1-2α)²ᵏ · E₀ → 0（因为 0 < 1-2α < 1，几何收敛）
 
-这为"Transformer 是吸引子动力学系统"提供了首个严格证明。
+于是 ‖v₁⁽ᵏ⁾-v₂⁽ᵏ⁾‖ = √(2Eₖ) → 0，
+轨道收敛到 v₁=v₂ 吸引子。
+
+吸引子：{L | L ∈ ℝᵈ}（任意单位向量，均为不动点）
+
+局限性：
+  · LayerNorm 假设（‖vᵢ‖=1）
+  · Q=K=V（标准自注意力）
+  · 忽略残差连接、FFN、位置编码
 -/
+
+-- Two-token 能量函数
+def two_token_energy (v1 v2 : EuclideanSpace ℝ (Fin d)) : ℝ :=
+  (1 / 2) * ‖v1 - v2‖ ^ 2
+
+-- 引理：能量非负
+lemma two_token_energy_nonneg {d : ℕ}
+    (v1 v2 : EuclideanSpace ℝ (Fin d)) : 0 ≤ two_token_energy v1 v2 := by
+  simp [two_token_energy, pow_nonneg]
+
+-- 引理：v₁≠v₂ 时能量严格正
+lemma two_token_energy_pos_of_neq {d : ℕ}
+    (v1 v2 : EuclideanSpace ℝ (Fin d)) (h : v1 ≠ v2) :
+    0 < two_token_energy v1 v2 := by
+  have : v1 - v2 ≠ 0 := by simp at h
+  have : 0 < ‖v1 - v2‖ := norm_pos'.mpr this
+  simp [two_token_energy, pow, this]
+
+-- 定理：Two-token 注意力不动点恰好是 v₁=v₂
+theorem two_token_fixed_point_char
+    {d : ℕ} (v1 v2 : EuclideanSpace ℝ (Fin d))
+    (hv1 : ‖v1‖ = 1) (hv2 : ‖v2‖ = 1) :
+    let s   := (1 : ℝ) / Real.sqrt d
+    let α   := Real.exp (v1 ⬝ v2 / Real.sqrt d)
+                / (2 * Real.exp s + Real.exp (v1 ⬝ v2 / Real.sqrt d))
+    let v1' := (1 - α) • v1 + α • v2
+    let v2' := α • v1 + (1 - α) • v2
+    (v1' = v1 ∧ v2' = v2) ↔ v1 = v2 := by
+  constructor
+  · intro h
+    rcases h with ⟨h1, h2⟩
+    have : v1' - v2' = (1 - 2*α) • (v1 - v2) := by
+      simp [v1', v2', sub_smul, smul_sub]
+      ring
+    rw [h1, h2, sub_self] at this
+    have : 1 - 2*α ≠ 0 := by
+      have : 0 < 1 - 2*α := by linarith
+      linarith
+    have : v1 - v2 = 0 := by simpa using this
+    exact sub_eq_zero.mp this
+  · intro h
+    rw [h] at v1' v2' ⊢
+    have : v1' = (1-α)•v1 + α•v1 := by rw [v1']
+    have : v2' = α•v1 + (1-α)•v1 := by rw [v2', h]
+    simp [this]
 
 end FECGConnection
 
