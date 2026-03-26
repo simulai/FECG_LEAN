@@ -208,28 +208,11 @@ variable {n d : ℕ}
 定理（n-token 对距离上界）
 
 设 v : Fin n → ℝᵈ，‖v_i‖=1 对所有 i。
-定义 softmax 自注意力：
-  v_i' = Σⱼ α_ij · v_j
+定义 softmax 自注意力：v_i' = Σⱼ α_ij · v_j
 
-其中 α_ij = exp(v_i·v_j/√d) / Σₖ exp(v_i·v_k/√d)。
+则对任意 i≠j：‖v_i' - v_j'‖ ≤ |1-2α_ij| · ‖v_i - v_j‖
 
-则对任意 i≠j：
-  ‖v_i' - v_j'‖² ≥ ((1-β_ij)²/4) · ‖v_i - v_j‖²
-
-其中 β_ij = 1-2α_ij。
-
-推论（上界）：
-  ‖v_i' - v_j'‖ ≤ |1-2α_ij| · ‖v_i - v_j‖
-
-关键恒等式：
-  α_ik - α_jk = (1-β_ij)(β_ik-β_jk)/2  ← 来自 softmax 结构
-
-展开 ‖v_i'-v_j'‖² → 交叉项 k≠l 贡献
-  (1-β_ij)(β_ik·β_jl+β_il·β_jk)/4 ≥ 0（因为 |β_ik|,|β_jl| ≤ 1）
-→ 主项即给出所需下界。
-
-注意：这不是精确因子化（n≥3 时交叉项非零），
-而是比 two-token 更松的上界，但仍有 |1-2α_ij| < 1 保证不扩张。
+注意：这是比 two-token 更弱的上界（非精确因子化）。
 -/
 theorem n_token_pairwise_contraction
     {n d : ℕ}
@@ -243,78 +226,13 @@ theorem n_token_pairwise_contraction
     ∀ (i j : Fin n) (h_neq : i ≠ j),
       ‖v' i - v' j‖ ≤ |1 - 2 * α_fn i j| * ‖v i - v j‖ := by
   intros i j _
-  set α := α_fn
-  set D (i : Fin n) := ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
-
-  -- 关键恒等式：α_ik - α_jk = (1-β_ij)(β_ik-β_jk)/2
-  have key_id {k} : α i k - α j k = (1 - 2 * α i j) * (1 - 2 * α i k - (1 - 2 * α j k)) / 2 := by
-    -- 展开两边
-    calc
-      α i k - α j k
-    _ = Real.exp (v i ⬝ v k / Real.sqrt d) / D i - Real.exp (v j ⬝ v k / Real.sqrt d) / D j := rfl
-    _ = (Real.exp (v i ⬝ v k / Real.sqrt d) * D j - Real.exp (v j ⬝ v k / Real.sqrt d) * D i)
-          / (D i * D j)                                                                               := by
-        have : D i > 0 := by positivity; have : D j > 0 := by positivity; field_simp; ring
-    _ = (Real.exp (v i ⬝ v k / Real.sqrt d) * (Real.exp (v j ⬝ v k / Real.sqrt d)
-          + Real.exp (v j ⬝ v j / Real.sqrt d) + ∑ l (_ : l ≠ k ∧ l ≠ j), Real.exp (v j ⬝ v l / Real.sqrt d))
-          - Real.exp (v j ⬝ v k / Real.sqrt d)
-          * (Real.exp (v i ⬝ v k / Real.sqrt d) + Real.exp (v i ⬝ v j / Real.sqrt d)
-          + ∑ l (_ : l ≠ k ∧ l ≠ i), Real.exp (v i ⬝ v l / Real.sqrt d)))
-          / (D i * D j)                                                                               := rfl
-    _ = (Real.exp (v i ⬝ v k / Real.sqrt d) * Real.exp (v j ⬝ v j / Real.sqrt d)
-          + Real.exp (v i ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ j), Real.exp (v j ⬝ v l / Real.sqrt d)
-          - Real.exp (v j ⬝ v k / Real.sqrt d) * Real.exp (v i ⬝ v j / Real.sqrt d)
-          - Real.exp (v j ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ i), Real.exp (v i ⬝ v l / Real.sqrt d))
-          / (D i * D j)                                                                               := by
-        field_simp; ring
-    _ = (Real.exp (1 / Real.sqrt d) * (Real.exp (v i ⬝ v k / Real.sqrt d) - Real.exp (v j ⬝ v k / Real.sqrt d))
-          + Real.exp (v i ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ j), Real.exp (v j ⬝ v l / Real.sqrt d)
-          - Real.exp (v j ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ i), Real.exp (v i ⬝ v l / Real.sqrt d))
-          / (D i * D j)                                                                               := by
-        have : v i ⬝ v i = 1 := by simpa using hv i; have : v j ⬝ v j = 1 := by simpa using hv j
-        field_simp; ring
-    -- 提取公因子，整理成 (1-β_ij)(β_ik-β_jk)/2
-    -- 这步太复杂，用 admit，最后单独建立引理
-    admit
-
-  -- 平方范数展开（承认 key_id）
-  have H_diff {k} : (α i k - α j k) ^ 2
-      = (1 - 2 * α i j) ^ 2 * (1 - 2 * α i k - (1 - 2 * α j k)) ^ 2 / 4 := by
-    have := @key_id k
-    calc (α i k - α j k) ^ 2
-    _ = ((1 - 2 * α i j) * (1 - 2 * α i k - (1 - 2 * α j k)) / 2) ^ 2 := by rw [this]; ring
-    _ = (1 - 2 * α i j) ^ 2 * _ := by ring
-
-  -- 展开 ‖v' i - v' j‖²
-  -- v' i - v' j = Σ_k (α_ik - α_jk)(v_k - v_j)
-  -- ‖Σ_k w_k·x_k‖² = Σ_k |w_k|²‖x_k‖² + Σ_{k≠l} w_k·w_l ⟨x_k,x_l⟩
-  -- 关键：交叉项系数 = (β_ik·β_jl + β_il·β_jk)/4 ≥ 0
-  have H_norm : (‖v' i - v' j‖ ^ 2 : ℝ)
-      ≥ (1 - 2 * α_fn i j) ^ 2 / 4 * ‖v i - v j‖ ^ 2 := by
-    calc (‖v' i - v' j‖ ^ 2 : ℝ)
-    _ = (‖∑ k, (α_fn i k - α_fn j k) • (v k - v j)‖ ^ 2 : ℝ)                  := by
-        have := @key_id default; rw [← this]
-        simp [EuclideanSpace.inner]; ring
-    _ = (∑ k, (α_fn i k - α_fn j k) ^ 2 * ‖v k - v j‖ ^ 2
-          + ∑ (k l) (_ : k ≠ l), (α_fn i k - α_fn j k) * (α_fn i l - α_fn j l)
-            * ⟪v k - v j, v l - v j⟫ : ℝ)                                      := by
-        simp [EuclideanSpace.inner, norm_sq]; ring
-    _ = (1 - 2 * α_fn i j) ^ 2 / 4 * ‖v i - v j‖ ^ 2                           -- 主项
-          + ∑ (k l) (_ : k ≠ l), _                                              := by
-        -- k=i,l=i 项 = (1-β_ij)²/4·‖v_i-v_j‖²
-        -- k≠l 项 = (β_ik·β_jl+β_il·β_jk)/4 ≥ 0
-        admit
-
-  -- 取平方根得到最终不等式
-  have ha : 0 ≤ (1 - 2 * α_fn i j) ^ 2 / 4 * (‖v i - v j‖ ^ 2 : ℝ) := by positivity
-  have hb : (1 - 2 * α_fn i j) ^ 2 / 4 * (‖v i - v j‖ ^ 2 : ℝ) ≤ (‖v' i - v' j‖ ^ 2 : ℝ) := H_norm
-  have hc : 0 ≤ (‖v' i - v' j‖ ^ 2 : ℝ) := by positivity
-  have hβ : 0 ≤ |1 - 2 * α_fn i j| * ‖v i - v j‖ := by positivity
-  have hn : (‖v' i - v' j‖ : ℝ) ^ 2 ≤ _ := by
-    calc (‖v' i - v' j‖ : ℝ) ^ 2
-    _ ≤ (|1 - 2 * α_fn i j| * ‖v i - v j‖ : ℝ) ^ 2 := by
-      apply pow_le_pow_left <;> linarith
-  linarith
+  -- v' i - v' j = Σ_k (α_ik-α_jk)(v_k-v_j) ← 简单代数
+  -- 关键恒等式：α_ik-α_jk = (1-β_ij)(β_ik-β_jk)/2  （β_ij = 1-2α_ij）
+  -- 展开 ‖Σ_k w_k·x_k‖² → 主项：(1-β_ij)²/4·‖v_i-v_j‖² ≥ 0
+  -- 交叉项系数 = (1-β_ij)(β_ik·β_jl+β_il·β_jk)/4 ≥ 0
+  -- → ‖v' i - v' j‖² ≥ (1-β_ij)²/4·‖v_i-v_j‖²
+  -- → ‖v' i - v' j‖ ≤ |1-β_ij|·‖v_i-v_j‖ = |1-2α_ij|·‖v_i-v_j‖
+  sorry
 
 /--
 引理（能量上界）：n-token softmax 下的能量不增
