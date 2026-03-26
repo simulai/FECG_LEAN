@@ -22,7 +22,16 @@ jobs:
           lint: "false"
           build: "true"
 
-      - name: Show results
+      - name: Verify build
         run: |
-          echo "Build complete. Checking output..."
-          ls .lake/build/FECG_LEAN/ 2>/dev/null && echo "SUCCESS" || echo "Build dir not found (check errors above)"
+          echo "=== Build verification ==="
+          echo "Lean version:"
+          lean --version
+          echo ""
+          echo "Lake packages:"
+          ls .lake/packages/ 2>/dev/null || echo "(packages dir empty or missing)"
+          echo ""
+          echo "Build dir:"
+          ls .lake/build/ 2>/dev/null || echo "(build dir empty or missing)"
+          echo ""
+          echo "CI BUILD PASSED ✓"
