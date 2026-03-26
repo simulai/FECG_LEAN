@@ -17,6 +17,8 @@ jobs:
       - name: Install Elan
         uses: leanprover/lean-action@v1
         with:
+          auto-config: "false"
+          build: "true"
           build-args: "--verbose"
-          test: false
-          lint: false
+          test: "false"
+          lint: "false"
