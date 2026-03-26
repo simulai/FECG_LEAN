@@ -1,0 +1,41 @@
+{"version": 7,
+ "packagesDir": ".lake/packages",
+ "packages":
+ [
+   {
+     "name": "FECG_LEAN",
+     "modTime": 1743000000000000000,
+     "opts": {},
+     "manifest":
+      [
+        {"require":
+          {"git":
+            {"remote": "https://github.com/leanprover-community/mathlib4",
+             "subDir": null,
+             "rev": "a45ae63747140c1b2cbad9d46f518015c047047a",
+             "opts": {"shallow": false}},
+           "name": "mathlib",
+           "opts": {}}}
+      ]
+   },
+   {
+     "name": "mathlib",
+     "git":
+      {"remote": "https://github.com/leanprover-community/mathlib4",
+       "subDir": null,
+       "rev": "a45ae63747140c1b2cbad9d46f518015c047047a",
+       "opts": {"shallow": false}},
+     "manifest":
+      [
+        {"require":
+          {"git":
+            {"remote": "https://github.com/leanprover-community/mathlib4",
+             "subDir": null,
+             "rev": "a45ae63747140c1b2cbad9d46f518015c047047a",
+             "opts": {"shallow": false}},
+           "name": "mathlib",
+           "opts": {}}}
+      ]
+   }
+ ]
+}
