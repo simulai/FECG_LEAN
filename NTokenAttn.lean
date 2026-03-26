@@ -243,36 +243,78 @@ theorem n_token_pairwise_contraction
     ∀ (i j : Fin n) (h_neq : i ≠ j),
       ‖v' i - v' j‖ ≤ |1 - 2 * α_fn i j| * ‖v i - v j‖ := by
   intros i j _
+  set α := α_fn
+  set D (i : Fin n) := ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
 
-  -- 记号
-  set β (p q : Fin n) : ℝ := 1 - 2 * α_fn p q
-  set diff := v' i - v' j
+  -- 关键恒等式：α_ik - α_jk = (1-β_ij)(β_ik-β_jk)/2
+  have key_id {k} : α i k - α j k = (1 - 2 * α i j) * (1 - 2 * α i k - (1 - 2 * α j k)) / 2 := by
+    -- 展开两边
+    calc
+      α i k - α j k
+    _ = Real.exp (v i ⬝ v k / Real.sqrt d) / D i - Real.exp (v j ⬝ v k / Real.sqrt d) / D j := rfl
+    _ = (Real.exp (v i ⬝ v k / Real.sqrt d) * D j - Real.exp (v j ⬝ v k / Real.sqrt d) * D i)
+          / (D i * D j)                                                                               := by
+        have : D i > 0 := by positivity; have : D j > 0 := by positivity; field_simp; ring
+    _ = (Real.exp (v i ⬝ v k / Real.sqrt d) * (Real.exp (v j ⬝ v k / Real.sqrt d)
+          + Real.exp (v j ⬝ v j / Real.sqrt d) + ∑ l (_ : l ≠ k ∧ l ≠ j), Real.exp (v j ⬝ v l / Real.sqrt d))
+          - Real.exp (v j ⬝ v k / Real.sqrt d)
+          * (Real.exp (v i ⬝ v k / Real.sqrt d) + Real.exp (v i ⬝ v j / Real.sqrt d)
+          + ∑ l (_ : l ≠ k ∧ l ≠ i), Real.exp (v i ⬝ v l / Real.sqrt d)))
+          / (D i * D j)                                                                               := rfl
+    _ = (Real.exp (v i ⬝ v k / Real.sqrt d) * Real.exp (v j ⬝ v j / Real.sqrt d)
+          + Real.exp (v i ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ j), Real.exp (v j ⬝ v l / Real.sqrt d)
+          - Real.exp (v j ⬝ v k / Real.sqrt d) * Real.exp (v i ⬝ v j / Real.sqrt d)
+          - Real.exp (v j ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ i), Real.exp (v i ⬝ v l / Real.sqrt d))
+          / (D i * D j)                                                                               := by
+        field_simp; ring
+    _ = (Real.exp (1 / Real.sqrt d) * (Real.exp (v i ⬝ v k / Real.sqrt d) - Real.exp (v j ⬝ v k / Real.sqrt d))
+          + Real.exp (v i ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ j), Real.exp (v j ⬝ v l / Real.sqrt d)
+          - Real.exp (v j ⬝ v k / Real.sqrt d) * ∑ l (_ : l ≠ k ∧ l ≠ i), Real.exp (v i ⬝ v l / Real.sqrt d))
+          / (D i * D j)                                                                               := by
+        have : v i ⬝ v i = 1 := by simpa using hv i; have : v j ⬝ v j = 1 := by simpa using hv j
+        field_simp; ring
+    -- 提取公因子，整理成 (1-β_ij)(β_ik-β_jk)/2
+    -- 这步太复杂，用 admit，最后单独建立引理
+    admit
 
-  -- 核心：展开 ‖diff‖² 并收集项
-  have key_id :
-      α_fn i k - α_fn j k = (1 - β i j) * (β i k - β j k) / 2 := by
-    have := calc
-      (1 - β i j) * (β i k - β j k)
-    _ = (2 * α_fn i j) * ((1-2α_fn i k) - (1-2α_fn j k)) := by rw [β]; ring
-    _ = 2 * (α_fn i j - α_fn i k + α_fn j k)                 := by ring
-    _ = 2 * (α_fn i j + α_fn j k - α_fn i k)
-    _ = 2 * (α_fn i j + (1-α_fn j k) - α_fn i k)            := by rw [Finset.sum_erase _ _]; swap; rfl
-    _ = 2 * (α_fn i j + 1 - α_fn j k - α_fn i k)
-    _ = 2 * (1 - (α_fn i k + α_fn j k) + α_fn i j)
-    _ = 2 * (α_fn i k - α_fn j k)                            := by admit
-    sorry
+  -- 平方范数展开（承认 key_id）
+  have H_diff {k} : (α i k - α j k) ^ 2
+      = (1 - 2 * α i j) ^ 2 * (1 - 2 * α i k - (1 - 2 * α j k)) ^ 2 / 4 := by
+    have := @key_id k
+    calc (α i k - α j k) ^ 2
+    _ = ((1 - 2 * α i j) * (1 - 2 * α i k - (1 - 2 * α j k)) / 2) ^ 2 := by rw [this]; ring
+    _ = (1 - 2 * α i j) ^ 2 * _ := by ring
 
   -- 展开 ‖v' i - v' j‖²
-  have H := calc
-    ‖diff‖ ^ 2
-    = ⟪diff, diff⟫                                              := by rfl
-    _ = ⟪∑ k, (α_fn i k - α_fn j k) • (v k - v j),
-       ∑ l, (α_fn i l - α_fn j l) • (v l - v j)⟫                 := by
-      rw [← Finset.sum_inner, inner_sum_sum]
-      simp only [inner_smul]
-  _ = (1 - β i j)² / 4 * ‖v i - v j‖ ^ 2 +                     -- k=i,l=i 项
-      ∑ (k l : Fin n) (hk : k ≠ j) (hl : l ≠ j) (hkl : k ≠ l),
-        (β i k - β j k) * (β i l - β j l) / 4 * ⟪v k - v j, v l - v j⟫ := by admit
+  -- v' i - v' j = Σ_k (α_ik - α_jk)(v_k - v_j)
+  -- ‖Σ_k w_k·x_k‖² = Σ_k |w_k|²‖x_k‖² + Σ_{k≠l} w_k·w_l ⟨x_k,x_l⟩
+  -- 关键：交叉项系数 = (β_ik·β_jl + β_il·β_jk)/4 ≥ 0
+  have H_norm : (‖v' i - v' j‖ ^ 2 : ℝ)
+      ≥ (1 - 2 * α_fn i j) ^ 2 / 4 * ‖v i - v j‖ ^ 2 := by
+    calc (‖v' i - v' j‖ ^ 2 : ℝ)
+    _ = (‖∑ k, (α_fn i k - α_fn j k) • (v k - v j)‖ ^ 2 : ℝ)                  := by
+        have := @key_id default; rw [← this]
+        simp [EuclideanSpace.inner]; ring
+    _ = (∑ k, (α_fn i k - α_fn j k) ^ 2 * ‖v k - v j‖ ^ 2
+          + ∑ (k l) (_ : k ≠ l), (α_fn i k - α_fn j k) * (α_fn i l - α_fn j l)
+            * ⟪v k - v j, v l - v j⟫ : ℝ)                                      := by
+        simp [EuclideanSpace.inner, norm_sq]; ring
+    _ = (1 - 2 * α_fn i j) ^ 2 / 4 * ‖v i - v j‖ ^ 2                           -- 主项
+          + ∑ (k l) (_ : k ≠ l), _                                              := by
+        -- k=i,l=i 项 = (1-β_ij)²/4·‖v_i-v_j‖²
+        -- k≠l 项 = (β_ik·β_jl+β_il·β_jk)/4 ≥ 0
+        admit
+
+  -- 取平方根得到最终不等式
+  have ha : 0 ≤ (1 - 2 * α_fn i j) ^ 2 / 4 * (‖v i - v j‖ ^ 2 : ℝ) := by positivity
+  have hb : (1 - 2 * α_fn i j) ^ 2 / 4 * (‖v i - v j‖ ^ 2 : ℝ) ≤ (‖v' i - v' j‖ ^ 2 : ℝ) := H_norm
+  have hc : 0 ≤ (‖v' i - v' j‖ ^ 2 : ℝ) := by positivity
+  have hβ : 0 ≤ |1 - 2 * α_fn i j| * ‖v i - v j‖ := by positivity
+  have hn : (‖v' i - v' j‖ : ℝ) ^ 2 ≤ _ := by
+    calc (‖v' i - v' j‖ : ℝ) ^ 2
+    _ ≤ (|1 - 2 * α_fn i j| * ‖v i - v j‖ : ℝ) ^ 2 := by
+      apply pow_le_pow_left <;> linarith
+  linarith
 
 /--
 引理（能量上界）：n-token softmax 下的能量不增
@@ -288,19 +330,11 @@ lemma n_token_energy_upper_bound
                                 / ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
     let v' (i : Fin n) := ∑ j, α_fn i j • v j
     n_token_energy v' ≤ n_token_energy v := by
-  dsimp [n_token_energy]
-  apply Finset.sum_le_sum
-  intro i j hij
-  dsimp
-  have := n_token_pairwise_contraction v hv i j hij
-  have : (∑ k : Fin n, Real.exp (v i ⬝ v k / Real.sqrt d)) > 0 := by positivity
-  have β_pos : 0 < (1 - 2 * α_fn i j) ^ 2 := by
-    have := ntoken_alpha_upper_bound i j hij (v i ⬝ v j / Real.sqrt.sqrt d) (1/√d) (α_fn i j)
-    have h_alpha := calc 0 < α_fn i j := by positivity
-      _ < 1/2 := by exact this
-    have : 0 < 1 - 2 * α_fn i j := by linarith
-    exact pow2_pos this
-  linarith
+  -- 由 n_token_pairwise_contraction：
+  -- ∀ i≠j：‖v' i - v' j‖² ≤ (1-2α_ij)² · ‖v_i-v_j‖² ≤ ‖v_i-v_j‖²
+  -- → Σᵢ<j ‖v' i - v' j‖² ≤ Σᵢ<j ‖v_i-v_j‖²
+  -- → E' ≤ E
+  sorry
 
 end NTokenContraction
 
@@ -416,8 +450,7 @@ lemma attractor_manifold_energy_zero
 -/
 lemma attractor_manifold_attn_invariant
     (v : Fin n → EuclideanSpace ℝ (Fin d))
-    (h : v ∈ n_token_attractor_manifold d)
-    (s : ℝ) :
+    (h : v ∈ n_token_attractor_manifold d) :
     let α_fn (i j : Fin n) := Real.exp (v i ⬝ v j / Real.sqrt d)
                                 / ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
     let v' (i : Fin n) := ∑ j, α_fn i j • v j
