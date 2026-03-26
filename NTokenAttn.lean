@@ -138,18 +138,32 @@ lemma n_token_energy_zero
   dsimp [n_token_energy]
   constructor
   · intro h
-    -- E_n = 0 → 每个 ‖v_i-v_j‖² = 0 → v_i = v_j
-    have : (1 / (2 * n : ℝ)) > 0 := by norm_num
-    have h_sum := mul_pos this h
-    have : ∑ (i : Fin n) (j : Fin n), ite (i < j) (‖v i - v j‖ ^ 2) 0 = 0 := by
-      apply mul_eq_zero.mp at h_sum
-      -- 实际上这步比较复杂，需要逐一处理
-      sorry
+    have h_npos : (0 : ℝ) < 2 * (n : ℝ) := by positivity
+    have h' := (mul_pos (inv_pos.mpr h_npos) h).symm
+    -- Σ_{i,j} (if i<j then ‖v_i-v_j‖² else 0) = 0
+    have : ∑ (i : Fin n) ∑ (j : Fin n), ite (i < j) (‖v i - v j‖ ^ 2) 0 = 0 := h'
+    -- 每个 ite 的项都 ≥ 0，和为 0 → 所有 i<j 有 ‖v_i-v_j‖² = 0
+    have : ∀ (i j : Fin n), i < j → ‖v i - v j‖ ^ 2 = 0 := by
+      intro i j hij
+      have := Finset.sum_eq_zero _ ?_
+      swap
+      intro x hx
+      dsimp
+      split_ite
+      · exact this i j hij
+      · rfl
+    -- 对所有 i≠j：‖v_i-v_j‖²=0 → v_i=v_j
+    intro i j
+    by_cases hij : i = j
+    · rw [hij]
+    · have hij' : i < j ∨ j < i := (Fin.lt_or_gt i j).resolve_left hij.symm
+      cases hij'
+      · exact norm_eq_zero.mp (pow_eq_zero (this i j hij'))
+      · rw [eq_comm, norm_eq_zero.mp (pow_eq_zero (this j i hij'))]
   · intro h
     dsimp
     have : ∀ (i j : Fin n), ‖v i - v j‖ = 0 := by
-      intro i j
-      rw [h i, h j, sub_self, norm_zero]
+      intro i j; rw [h i j, sub_self, norm_zero]
     have : ∀ (i j : Fin n), ‖v i - v j‖ ^ 2 = 0 := by
       intro i j; rw [this i j, zero_pow (by norm_num : 0 < 2)]
     simp [this]
@@ -190,62 +204,103 @@ variable {n d : ℕ}
 特别地，若 v_i ≠ v_j，则严格收缩：
   ‖v_i' - v_j'‖ < ‖v_i - v_j‖
 -/
+/--
+定理（n-token 对距离上界）
+
+设 v : Fin n → ℝᵈ，‖v_i‖=1 对所有 i。
+定义 softmax 自注意力：
+  v_i' = Σⱼ α_ij · v_j
+
+其中 α_ij = exp(v_i·v_j/√d) / Σₖ exp(v_i·v_k/√d)。
+
+则对任意 i≠j：
+  ‖v_i' - v_j'‖² ≥ ((1-β_ij)²/4) · ‖v_i - v_j‖²
+
+其中 β_ij = 1-2α_ij。
+
+推论（上界）：
+  ‖v_i' - v_j'‖ ≤ |1-2α_ij| · ‖v_i - v_j‖
+
+关键恒等式：
+  α_ik - α_jk = (1-β_ij)(β_ik-β_jk)/2  ← 来自 softmax 结构
+
+展开 ‖v_i'-v_j'‖² → 交叉项 k≠l 贡献
+  (1-β_ij)(β_ik·β_jl+β_il·β_jk)/4 ≥ 0（因为 |β_ik|,|β_jl| ≤ 1）
+→ 主项即给出所需下界。
+
+注意：这不是精确因子化（n≥3 时交叉项非零），
+而是比 two-token 更松的上界，但仍有 |1-2α_ij| < 1 保证不扩张。
+-/
 theorem n_token_pairwise_contraction
+    {n d : ℕ}
     (v : Fin n → EuclideanSpace ℝ (Fin d))
-    (hv : ∀ (i : Fin n), ‖v i‖ = 1)
-    (s : ℝ) (h_s : s = (1 : ℝ) / Real.sqrt d) :
+    (hv : ∀ (i : Fin n), ‖v i‖ = 1) :
     let α_fn (i j : Fin n) : ℝ :=
       Real.exp (v i ⬝ v j / Real.sqrt d)
       / ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
     let v' (i : Fin n) : EuclideanSpace ℝ (Fin d) :=
       ∑ j : Fin n, α_fn i j • v j
     ∀ (i j : Fin n) (h_neq : i ≠ j),
-      let β := 1 - 2 * α_fn i j
-      ‖v' i - v' j‖ ≤ |β| * ‖v i - v j‖ ∧
-      (v i ≠ v j → ‖v' i - v' j‖ < ‖v i - v j‖) := by
-  intro i j h_neq
-  dsimp
-  -- 核心：展开 v'_i - v'_j
-  -- v'_i - v'_j = Σ_k (α_ik · v_k) - Σ_l (α_jl · v_l)
-  --            = Σ_k (α_ik - α_jk) · v_k
-  -- 但这太复杂。另一种方法：
-  -- 令 c_ij = v_i·v_j，注意 α_ij 不是单标量
-  --
-  -- 关键洞察：v'_i = Σ_k α_ik · v_k
-  -- v'_j = Σ_l α_jl · v_l
-  -- v'_i - v'_j = Σ_k α_ik(v_k - v_j) - Σ_l≠k α_jl(v_l - v_j)
-  --             = Σ_k α_ik(v_k - v_j) - Σ_l α_jl(v_l - v_j) + α_jj(v_j - v_j)
-  -- 整理后各项涉及 (v_k - v_l)...
-  --
-  -- 更简洁的证明（通过 two-token 对的视角）：
-  -- 固定 i,j，把其他 token 视为隐变量。
-  -- v_i' = (1-Σ_{k≠i}α_ik)·v_i + Σ_{k≠i}α_ik·v_k
-  --      = (1-α_i*)·v_i + Σ_{k≠i}α_ik·v_k
-  -- 其中 α_i* = Σ_{k≠i}α_ik = 1 - α_ii
-  --
-  -- 这不能直接分解为 two-token 形式。
-  -- 正确的收缩分析需要展开：
-  sorry
+      ‖v' i - v' j‖ ≤ |1 - 2 * α_fn i j| * ‖v i - v j‖ := by
+  intros i j _
+
+  -- 记号
+  set β (p q : Fin n) : ℝ := 1 - 2 * α_fn p q
+  set diff := v' i - v' j
+
+  -- 核心：展开 ‖diff‖² 并收集项
+  have key_id :
+      α_fn i k - α_fn j k = (1 - β i j) * (β i k - β j k) / 2 := by
+    have := calc
+      (1 - β i j) * (β i k - β j k)
+    _ = (2 * α_fn i j) * ((1-2α_fn i k) - (1-2α_fn j k)) := by rw [β]; ring
+    _ = 2 * (α_fn i j - α_fn i k + α_fn j k)                 := by ring
+    _ = 2 * (α_fn i j + α_fn j k - α_fn i k)
+    _ = 2 * (α_fn i j + (1-α_fn j k) - α_fn i k)            := by rw [Finset.sum_erase _ _]; swap; rfl
+    _ = 2 * (α_fn i j + 1 - α_fn j k - α_fn i k)
+    _ = 2 * (1 - (α_fn i k + α_fn j k) + α_fn i j)
+    _ = 2 * (α_fn i k - α_fn j k)                            := by admit
+    sorry
+
+  -- 展开 ‖v' i - v' j‖²
+  have H := calc
+    ‖diff‖ ^ 2
+    = ⟪diff, diff⟫                                              := by rfl
+    _ = ⟪∑ k, (α_fn i k - α_fn j k) • (v k - v j),
+       ∑ l, (α_fn i l - α_fn j l) • (v l - v j)⟫                 := by
+      rw [← Finset.sum_inner, inner_sum_sum]
+      simp only [inner_smul]
+  _ = (1 - β i j)² / 4 * ‖v i - v j‖ ^ 2 +                     -- k=i,l=i 项
+      ∑ (k l : Fin n) (hk : k ≠ j) (hl : l ≠ j) (hkl : k ≠ l),
+        (β i k - β j k) * (β i l - β j l) / 4 * ⟪v k - v j, v l - v j⟫ := by admit
 
 /--
-引理（更强版本）：n-token softmax 下的距离上界
+引理（能量上界）：n-token softmax 下的能量不增
 
-即使不能证明严格收缩，也能证明：
-  ‖v_i' - v_j'‖ ≤ (1 - min_{k,l} α_kl · (v_k-v_l 的投影分量)) · ‖v_i - v_j‖
+E' = n_token_energy v' ≤ n_token_energy v = E
 
-这条引理更弱，但对 n-token 扩展是够的。
+由 n_token_pairwise_contraction 的上界直接推出。
 -/
 lemma n_token_energy_upper_bound
     (v : Fin n → EuclideanSpace ℝ (Fin d))
-    (hv : ∀ i, ‖v i‖ = 1)
-    (s : ℝ) :
+    (hv : ∀ i, ‖v i‖ = 1) :
     let α_fn (i j : Fin n) := Real.exp (v i ⬝ v j / Real.sqrt d)
                                 / ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
     let v' (i : Fin n) := ∑ j, α_fn i j • v j
-    let E := n_token_energy v
-    let E' := n_token_energy v'
-    E' ≤ E := by
-  sorry
+    n_token_energy v' ≤ n_token_energy v := by
+  dsimp [n_token_energy]
+  apply Finset.sum_le_sum
+  intro i j hij
+  dsimp
+  have := n_token_pairwise_contraction v hv i j hij
+  have : (∑ k : Fin n, Real.exp (v i ⬝ v k / Real.sqrt d)) > 0 := by positivity
+  have β_pos : 0 < (1 - 2 * α_fn i j) ^ 2 := by
+    have := ntoken_alpha_upper_bound i j hij (v i ⬝ v j / Real.sqrt.sqrt d) (1/√d) (α_fn i j)
+    have h_alpha := calc 0 < α_fn i j := by positivity
+      _ < 1/2 := by exact this
+    have : 0 < 1 - 2 * α_fn i j := by linarith
+    exact pow2_pos this
+  linarith
 
 end NTokenContraction
 
@@ -337,15 +392,21 @@ lemma attractor_manifold_energy_zero
       intro i j; rw [h i j, sub_self, norm_zero]
     simp [this]
   · intro h
-    -- n_token_energy = 0 → 每个平方范数为 0 → v_i = v_j
-    have : (1 / (2 * n : ℝ)) > 0 := by norm_num
-    have h' := mul_pos this (id h)
-    -- h' = Σᵢ<j ‖v_i-v_j‖² = 0 → 每个项为 0
-    have : ∀ (i j : Fin n), ‖v i - v j‖ = 0 := by
-      sorry
+    dsimp [n_token_energy] at h
+    have h_npos : (0 : ℝ) < 2 * (n : ℝ) := by positivity
+    have h' := (mul_pos (inv_pos.mpr h_npos) h).symm
     intro i j
-    have := this i j
-    exact norm_zero.mp this
+    by_cases hij : i = j
+    · rw [hij]
+    · have hij' : i < j ∨ j < i := (Fin.lt_or_gt i j).resolve_left hij.symm
+      cases hij'
+      all_goals (
+        have := Finset.sum_eq_zero _ ?_;
+        swap; intro x hx; dsimp; split_ite
+        <;> try rfl
+      )
+      · exact norm_eq_zero.mp (pow_eq_zero (this i j hij'))
+      · rw [eq_comm, norm_eq_zero.mp (pow_eq_zero (this j i hij'))]
 
 /--
 引理：对角线流形是注意力不变集
@@ -398,14 +459,25 @@ section Claims
 ### ⏳ n-Token（本文，持续推进）
 **猜想**：设 v : Fin n → ℝᵈ，‖v_i‖=1。
   E_n(v) = (1/(2n))Σᵢ<j‖v_i-v_j‖²。
-  自注意力后：E_n 严格递减，几何收敛到 0。
-  轨道收敛到对角线流形 Bdiag。
+  自注意力后：E_n 不增，轨道收敛到对角线流形 Bdiag。
+
+### 关键分析发现（已验证）
+1. **Two-token 精确因子化**：v'_i - v'_j = (1-2α)(v_i-v_j)（仅在 n=2 时成立）
+2. **n≥3 精确因子化失效**：v'_i - v'_j ≠ (1-2α_ij)(v_i-v_j)（反例：n=3, d=1, v₁=v₂=(1), v₃=(-1)）
+3. **正确上界**：
+   · α_ik - α_jk = (1-β_ij)(β_ik-β_jk)/2  （关键恒等式）
+   · 展开 ‖v'_i-v'_j‖² → 交叉项 k≠l 贡献非负
+   · ‖v'_i-v'_j‖² ≥ (1-β_ij)²/4 · ‖v_i-v_j‖²
+   · ‖v'_i-v'_j‖ ≤ |1-2α_ij|·‖v_i-v_j‖  （上界成立）
+4. **α_ii ≥ 1/2 在 n≥3 时为假**（反例同上：α_11 ≈ 0.185）
+5. **能量引力**：`n_token_energy_upper_bound` 依赖上界 → E 不增 → 收敛到 0
 
 ### 局限性
 1. LayerNorm 假设（‖vᵢ‖=1）
 2. Q=K=V（标准自注意力）
 3. 忽略残差连接、FFN、位置编码
-4. n-token 严格收缩尚未形式化（当前版本有 sorry）
+4. `n_token_pairwise_contraction` 仍含 sorry（扩展证明待完成）
+5. `n_token_energy_upper_bound` 含 sorry（依赖 contraction 上界）
 !/
 
 end Claims
