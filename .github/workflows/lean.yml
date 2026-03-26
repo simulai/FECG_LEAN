@@ -22,16 +22,16 @@ jobs:
           lint: "false"
           build: "true"
 
-      - name: Verify build
+      - name: Verify all Lean files
         run: |
-          echo "=== Build verification ==="
-          echo "Lean version:"
+          echo "=== Lean4 Verification ==="
           lean --version
           echo ""
-          echo "Lake packages:"
-          ls .lake/packages/ 2>/dev/null || echo "(packages dir empty or missing)"
-          echo ""
-          echo "Build dir:"
-          ls .lake/build/ 2>/dev/null || echo "(build dir empty or missing)"
-          echo ""
-          echo "CI BUILD PASSED ✓"
+          echo "Running lake build (verifier/ included via lean_lib)..."
+          if lake build; then
+            echo ""
+            echo "ALL THEOREMS VERIFIED OK"
+          else
+            echo "VERIFICATION FAILED (type error detected)"
+            exit 1
+          fi
