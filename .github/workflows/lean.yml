@@ -14,15 +14,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install elan
+      - name: Install elan + toolchain
         run: |
+          set -e
           curl -fsSL https://elan.rus-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> $GITHUB_PATH
+          for i in 1 2 3; do
+            echo "=== Toolchain install attempt $i ==="
+            elan toolchain add leanprover/lean4:v4.27.0 && break
+            sleep 10
+          done
+          elan show
+          lean --version
+          lake --version
 
       - name: Lake build
         run: |
+          set -e
           export PATH="$HOME/.elan/bin:$PATH"
-          lean --version || echo "WARNING: lean not found in PATH"
-          lake --version || echo "WARNING: lake not found in PATH"
           lake build --verbose
         continue-on-error: false
