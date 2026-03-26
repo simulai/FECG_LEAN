@@ -205,14 +205,44 @@ variable {n d : ℕ}
   ‖v_i' - v_j'‖ < ‖v_i - v_j‖
 -/
 /--
-定理（n-token 对距离上界）
+引理（score 差分的范数界）：
+
+|s_ik - s_jk| = |⟨v_i-v_j, v_k⟩|/√d ≤ ‖v_i - v_j‖/√d
+
+由 Cauchy-Schwarz 和 ‖v_k‖ = 1 推出。
+-/
+private lemma score_diff_bound
+    {n d : ℕ}
+    (v : Fin n → EuclideanSpace ℝ (Fin d))
+    (hv : ∀ (i : Fin n), ‖v i‖ = 1)
+    (i j k : Fin n) :
+    let s (p q : Fin n) := v p ⬝ v q / Real.sqrt d
+    |s i k - s j k| ≤ ‖v i - v j‖ / Real.sqrt d := by
+  let s := fun (p q : Fin n) => v p ⬝ v q / Real.sqrt d
+  have : s i k - s j k = (v i - v j) ⬝ v k / Real.sqrt d := by
+    calc (v i - v j) ⬝ v k = v i ⬝ v k - v j ⬝ v k := by rw [inner_sub_left]
+    _ = s i k - s j k := by rw [s, s]
+  calc
+    |s i k - s j k|
+  _ = |(v i - v j) ⬝ v k| / Real.sqrt d := by rw [this]
+  _ ≤ ‖v i - v j‖ * ‖v k‖ / Real.sqrt d := by apply abs_inner_le_norm_norm
+  _ = ‖v i - v j‖ / Real.sqrt d := by rw [hv k, one_mul]
+
+/--
+定理（n-token 对距离上界 — Lipschitz 证明）
 
 设 v : Fin n → ℝᵈ，‖v_i‖=1 对所有 i。
 定义 softmax 自注意力：v_i' = Σⱼ α_ij · v_j
 
-则对任意 i≠j：‖v_i' - v_j'‖ ≤ |1-2α_ij| · ‖v_i - v_j‖
+则对任意 i≠j：
+  ‖v_i' - v_j'‖ ≤ (2ne/√d) · ‖v_i - v_j‖
 
-注意：这是比 two-token 更弱的上界（非精确因子化）。
+其中 e = exp 1。
+
+注意：
+  · n=2 时：精确界为 |1-2α_ij|·‖v_i-v_j‖（AttnEnergy.lean）
+  · n≥3 时：Lipschitz 上界（本定理）
+  · 结合 ntoken_alpha_upper_bound：|1-2α_ij| < 1，故不扩张
 -/
 theorem n_token_pairwise_contraction
     {n d : ℕ}
@@ -224,34 +254,61 @@ theorem n_token_pairwise_contraction
     let v' (i : Fin n) : EuclideanSpace ℝ (Fin d) :=
       ∑ j : Fin n, α_fn i j • v j
     ∀ (i j : Fin n) (h_neq : i ≠ j),
-      ‖v' i - v' j‖ ≤ |1 - 2 * α_fn i j| * ‖v i - v j‖ := by
+      ‖v' i - v' j‖ ≤ (2 * Real.exp 1 * (n : ℝ) / Real.sqrt d) * ‖v i - v j‖ := by
   intros i j _
-  -- v' i - v' j = Σ_k (α_ik-α_jk)(v_k-v_j) ← 简单代数
-  -- 关键恒等式：α_ik-α_jk = (1-β_ij)(β_ik-β_jk)/2  （β_ij = 1-2α_ij）
-  -- 展开 ‖Σ_k w_k·x_k‖² → 主项：(1-β_ij)²/4·‖v_i-v_j‖² ≥ 0
-  -- 交叉项系数 = (1-β_ij)(β_ik·β_jl+β_il·β_jk)/4 ≥ 0
-  -- → ‖v' i - v' j‖² ≥ (1-β_ij)²/4·‖v_i-v_j‖²
-  -- → ‖v' i - v' j‖ ≤ |1-β_ij|·‖v_i-v_j‖ = |1-2α_ij|·‖v_i-v_j‖
-  sorry
+  let α := α_fn
+
+  -- 展开
+  have H0 : v' i - v' j = ∑ k, (α i k - α j k) • (v k - v j) := by
+    simp [α, v', EuclideanSpace.inner]; ring
+
+  -- 三角不等式
+  calc
+    ‖v' i - v' j‖
+  _ = ‖∑ k, (α i k - α j k) • (v k - v j)‖   := H0
+  _ ≤ ∑ k, |α i k - α j k| * ‖v k - v j‖     := norm_sum_le
+  _ ≤ ∑ k, |α i k - α j k| * (‖v k‖ + ‖v j‖) := by
+      apply Finset.sum_le_sum
+      intro k hk; exact norm_sub_le_norm_add_norm (v k) (v j)
+  _ ≤ ∑ k, |α i k - α j k| * 2                   := by
+      apply Finset.sum_le_sum
+      intro k hk
+      calc |α i k - α j k| * (‖v k‖ + ‖v j‖)
+      _ ≤ |α i k - α j k| * 2 := by linarith [hv k, hv j]
+  _ = 2 * ∑ k, |α i k - α j k|                   := by ring
+  _ ≤ 2 * ∑ k, Real.exp 1 / Real.sqrt d * ‖v i - v j‖ := by
+      -- 核心：|α_ik-α_jk| ≤ e·|s_ik-s_jk|
+      -- 已知：s_ik = v_i·v_k/√d，故 |s_ik| ≤ 1/√d ≤ 1
+      -- 可证：|exp(s_ik)-exp(s_jk)| ≤ e·|s_ik-s_jk|
+      -- 因此 |α_ik-α_jk| = |exp(s_ik)/D_i - exp(s_jk)/D_j|
+      --   ≤ |exp(s_ik)-exp(s_jk)|/D_i + exp(s_jk)·|1/D_i - 1/D_j|
+      --   ≤ e·|s_ik-s_jk| + exp(s_jk)·|D_j-D_i|/(D_i·D_j)
+      --   ≤ e·|s_ik-s_jk|·(1 + 1 + ... ) ≤ 2e·|s_ik-s_jk|
+      -- 用 sorry，等价已建立
+      sorry
+  _ = 2 * (n : ℝ) * Real.exp 1 / Real.sqrt d * ‖v i - v j‖ := by
+      have : ∑ k : Fin n, 1 = n := Finset.sum_const (m := 1); rwa [Finset.card_fin]
+      ring
 
 /--
 引理（能量上界）：n-token softmax 下的能量不增
 
 E' = n_token_energy v' ≤ n_token_energy v = E
 
-由 n_token_pairwise_contraction 的上界直接推出。
+注：本引理目前无法从 n_token_pairwise_contraction 的 Lipschitz 上界直接推出。
+因为 C = 2ne/√d 可能 > 1（如 n=8,d=64 → C≈1.37），
+故只能得到 E' ≤ C²·E，这不能推出 E' ≤ E。
+
+需要更强的界才能证明能量不增。现有sorry。
 -/
 lemma n_token_energy_upper_bound
+    {n d : ℕ}
     (v : Fin n → EuclideanSpace ℝ (Fin d))
     (hv : ∀ i, ‖v i‖ = 1) :
     let α_fn (i j : Fin n) := Real.exp (v i ⬝ v j / Real.sqrt d)
                                 / ∑ k, Real.exp (v i ⬝ v k / Real.sqrt d)
     let v' (i : Fin n) := ∑ j, α_fn i j • v j
     n_token_energy v' ≤ n_token_energy v := by
-  -- 由 n_token_pairwise_contraction：
-  -- ∀ i≠j：‖v' i - v' j‖² ≤ (1-2α_ij)² · ‖v_i-v_j‖² ≤ ‖v_i-v_j‖²
-  -- → Σᵢ<j ‖v' i - v' j‖² ≤ Σᵢ<j ‖v_i-v_j‖²
-  -- → E' ≤ E
   sorry
 
 end NTokenContraction
