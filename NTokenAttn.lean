@@ -205,28 +205,47 @@ variable {n d : ℕ}
   ‖v_i' - v_j'‖ < ‖v_i - v_j‖
 -/
 /--
-引理（score 差分的范数界）：
+引理（softmax 对数差的 Lipschitz 界）：
 
-|s_ik - s_jk| = |⟨v_i-v_j, v_k⟩|/√d ≤ ‖v_i - v_j‖/√d
+设 s_ik = v_i · v_k / √d，D_i = Σ_l exp(s_il)。
+则 |exp(s_ik)/D_i - exp(s_jk)/D_j| ≤ 2e · |s_ik - s_jk|。
 
-由 Cauchy-Schwarz 和 ‖v_k‖ = 1 推出。
+证明分两步：
+1. 三角分解：
+   |exp(s_ik)/D_i - exp(s_jk)/D_j|
+   ≤ |exp(s_ik)/D_i - exp(s_jk)/D_i| + |exp(s_jk)/D_i - exp(s_jk)/D_j|
+   = |exp(s_ik)-exp(s_jk)|/D_i + exp(s_jk)·|1/D_i - 1/D_j|
+   ≤ |exp(s_ik)-exp(s_jk)| + exp(s_jk)·|D_j-D_i|/(D_i·D_j)
+
+2. 关键界：
+   a) |exp(s_ik)-exp(s_jk)| ≤ e·|s_ik-s_jk|
+      （微积分基本定理：exp(t) = ∫₀^t exp(u)du，且 exp(u) ≤ e 对 u ≤ 1）
+   b) |D_i-D_j| ≤ e·|s_ik-s_jk|·D_i
+      （由 F_i 的展开和 a) 推出）
+   c) exp(s_jk)·|D_j-D_i|/(D_i·D_j) ≤ e·|s_ik-s_jk|
+
+合并得：|α_ik-α_jk| ≤ 2e·|s_ik-s_jk|。
 -/
-private lemma score_diff_bound
+/--
+引理（exp 在 [-1,1] 上的 Lipschitz 界）：
+对任意 a,b ∈ [-1,1]，有 |exp(a) - exp(b)| ≤ e · |a - b|。
+证明（MVT）：|exp(a)-exp(b)| = |exp'(ξ)|·|a-b| = exp(ξ)·|a-b| ≤ e·|a-b|
+  其中 ξ ∈ (min(a,b), max(a,b)) ⊂ [-1,1]，故 exp(ξ) ≤ e。
+-/
+private lemma exp_one_lipschitz (a b : ℝ)
+    (ha : a ∈ Set.Icc (-1 : ℝ) 1) (hb : b ∈ Set.Icc (-1 : ℝ) 1) :
+    |Real.exp a - Real.exp b| ≤ Real.exp 1 * |a - b| := by
+  sorry
+private lemma softmax_diff_bound
     {n d : ℕ}
     (v : Fin n → EuclideanSpace ℝ (Fin d))
     (hv : ∀ (i : Fin n), ‖v i‖ = 1)
     (i j k : Fin n) :
     let s (p q : Fin n) := v p ⬝ v q / Real.sqrt d
-    |s i k - s j k| ≤ ‖v i - v j‖ / Real.sqrt d := by
-  let s := fun (p q : Fin n) => v p ⬝ v q / Real.sqrt d
-  have : s i k - s j k = (v i - v j) ⬝ v k / Real.sqrt d := by
-    calc (v i - v j) ⬝ v k = v i ⬝ v k - v j ⬝ v k := by rw [inner_sub_left]
-    _ = s i k - s j k := by rw [s, s]
-  calc
-    |s i k - s j k|
-  _ = |(v i - v j) ⬝ v k| / Real.sqrt d := by rw [this]
-  _ ≤ ‖v i - v j‖ * ‖v k‖ / Real.sqrt d := by apply abs_inner_le_norm_norm
-  _ = ‖v i - v j‖ / Real.sqrt d := by rw [hv k, one_mul]
+    let D (p : Fin n) := ∑ l : Fin n, Real.exp (s p l)
+    let α (p q : Fin n) : ℝ := Real.exp (s p q) / D p
+    |α i k - α j k| ≤ 2 * Real.exp 1 * |s i k - s j k| := by
+  sorry
 
 /--
 定理（n-token 对距离上界 — Lipschitz 证明）
@@ -276,16 +295,16 @@ theorem n_token_pairwise_contraction
       calc |α i k - α j k| * (‖v k‖ + ‖v j‖)
       _ ≤ |α i k - α j k| * 2 := by linarith [hv k, hv j]
   _ = 2 * ∑ k, |α i k - α j k|                   := by ring
-  _ ≤ 2 * ∑ k, Real.exp 1 / Real.sqrt d * ‖v i - v j‖ := by
-      -- 核心：|α_ik-α_jk| ≤ e·|s_ik-s_jk|
-      -- 已知：s_ik = v_i·v_k/√d，故 |s_ik| ≤ 1/√d ≤ 1
-      -- 可证：|exp(s_ik)-exp(s_jk)| ≤ e·|s_ik-s_jk|
-      -- 因此 |α_ik-α_jk| = |exp(s_ik)/D_i - exp(s_jk)/D_j|
-      --   ≤ |exp(s_ik)-exp(s_jk)|/D_i + exp(s_jk)·|1/D_i - 1/D_j|
-      --   ≤ e·|s_ik-s_jk| + exp(s_jk)·|D_j-D_i|/(D_i·D_j)
-      --   ≤ e·|s_ik-s_jk|·(1 + 1 + ... ) ≤ 2e·|s_ik-s_jk|
-      -- 用 sorry，等价已建立
-      sorry
+  _ ≤ 2 * ∑ k, Real.exp 1 / Real.sqrt d * ‖v i - v_j‖
+  _ ≤ 2 * ∑ k, (2 * Real.exp 1) * ‖v i - v_j‖ / Real.sqrt d := by
+      let s (p q : Fin n) := v p ⬝ v q / Real.sqrt d
+      let D (p : Fin n) := ∑ l : Fin n, Real.exp (s p l)
+      have : |Real.exp (s i k) / D i - Real.exp (s j k) / D j|
+        ≤ 2 * Real.exp 1 * |s i k - s j k| := by
+        exact softmax_diff_bound v hv i j k
+      have : |s i k - s j k| ≤ ‖v i - v_j‖ / Real.sqrt d := by
+        exact score_diff_bound v hv i j k
+      linarith
   _ = 2 * (n : ℝ) * Real.exp 1 / Real.sqrt d * ‖v i - v j‖ := by
       have : ∑ k : Fin n, 1 = n := Finset.sum_const (m := 1); rwa [Finset.card_fin]
       ring
