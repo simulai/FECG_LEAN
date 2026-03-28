@@ -261,17 +261,140 @@ private lemma exp_one_lipschitz (a b : ℝ)
     _ ≤ Real.exp 1 * |b - a| := by
       apply mul_le_mul_of_nonneg_right _ (abs_nonneg _)
       exact sup_le hSup
-private lemma softmax_diff_bound
-    {n d : ℕ}
-    (v : Fin n → EuclideanSpace ℝ (Fin d))
-    (hv : ∀ (i : Fin n), ‖v i‖ = 1)
-    (i j k : Fin n) :
-    let s (p q : Fin n) := v p ⬝ v q / Real.sqrt d
-    let D (p : Fin n) := ∑ l : Fin n, Real.exp (s p l)
-    let α (p q : Fin n) : ℝ := Real.exp (s p q) / D p
-    |α i k - α j k| ≤ 2 * Real.exp 1 * |s i k - s j k| := by
-  sorry
+  /--
+  - lemma (softmax Lipschitz): |ALPHA_ik-ALPHA_jk|≤(e + 2e^2*(n-1)) * |s_ik-s_jk|
+  -/
+  private lemma softmax_diff_bound
+        {n d : RE}
+        (v : Fin n→EuclideanSpaceℝ(Fin d))
+        (hv : forall (i : Fin n), NORMv i‖= 1)
+        (i j k : Fin n) :
+        let s (p q : Fin n) := v p·v q / Real.sqrt d
+        let D (p : Fin n) :=∑l : Fin n, Real.exp (s p l)
+        letα(p q : Fin n) :ℝ:= Real.exp (s p q) / D p
+        |ALPHA i k -αj k| LE
+            (Real.exp 1 + 2 * Real.exp 1 * Real.exp 1 * (n - 1 : RE)) * |s i k - s j k| := by
+  by
+  
+    -- D_i >= 1 (since exp(s_ii) >= 1)
+    have hD1 : D i≥1 := by
+      calc D i≥Real.exp (s i i)
+      _ = Real.exp (1 / Real.sqrt d) := by
+        calc s i i = |v i| ^ 2 / Real.sqrt d := by rw [inner_self_eq_norm_sq]; rw [hv i]; norm_num
+      _≥Real.exp 0 := by linarith
+      _ = 1 := by norm_num
+  
+    have hD2 : D j≥1 := by
+      calc D j≥Real.exp (s j j)
+      _ = Real.exp (1 / Real.sqrt d) := by
+        calc s j j = |v j| ^ 2 / Real.sqrt d := by rw [inner_self_eq_norm_sq]; rw [hv j]; norm_num
+      _≥Real.exp 0 := by linarith
+      _ = 1 := by norm_num
+  
+    -- |s_il|, |s_jl| <= 1/sqrt(d) (unit vectors, Cauchy-Schwarz)
+    have Hnorm_il (l : Fin n) : |s i l|≤1 / Real.sqrt d := by
+      calc |s i l| = |v i·v l| / Real.sqrt d := rfl
+      _≤1 / Real.sqrt d := by apply abs_inner_le_norm_norm
+  
+    have Hnorm_jl (l : Fin n) : |s j l|≤1 / Real.sqrt d := by
+      calc |s j l| = |v j·v l| / Real.sqrt d := rfl
+      _≤1 / Real.sqrt d := by apply abs_inner_le_norm_norm
+  
+    -- main proof
+    calc
+      |ALPHA i k - ALPHA j k|
+    _ = |Real.exp (s i k) / D i - Real.exp (s j k) / D j| := rfl
+    _≤|Real.exp (s i k) / D i - Real.exp (s j k) / D i|
+          + |Real.exp (s j k) / D i - Real.exp (s j k) / D j| := norm_triangle
+    _ = |Real.exp (s i k) - Real.exp (s j k)| / D i
+          + Real.exp (s j k) * |1 / D i - 1 / D j| := by ring
+    _≤|Real.exp (s i k) - Real.exp (s j k)| + Real.exp (s j k) * |D i - D j| := by
+        have : D i≥1 := hD1
+        have : D j≥1 := hD2
+        have : D i * D j≥1 := by linarith
+        have : |1/D_i - 1/D_j| = |D_j - D_i| / (D_i * D_j) := by field_simp [hD1, hD2]
+        have : 1 / (D_i * D_j)≤1 := by linarith
+        linarith
+    _≤Real.exp 1 * |s i k - s j k| + Real.exp 1 * |D i - D j| := by
+        have : |Real.exp (s i k) - Real.exp (s j k)|≤Real.exp 1 * |s i k - s j k| := by
+          exact exp_one_lipschitz (s i k) (s j k) (by linarith) (by linarith)
+        have : Real.exp (s j k)≤Real.exp 1 := by
+          calc s j k≤1 / Real.sqrt d := by
+            calc s j k = |v j·v k| / Real.sqrt d := rfl
+            _≤1 / Real.sqrt d := by apply abs_inner_le_norm_norm
+          _≤1 := by linarith
+        linarith
+    _ = Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 * |SUM l, Real.exp (s i l) - Real.exp (s j l)| := rfl
+    _≤Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 *∑l, |Real.exp (s i l) - Real.exp (s j l)| := by
+        exact le_trans (le_refl _) (by exact norm_sum_le)
+    _≤Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 *∑l, Real.exp 1 * |s i l - s j l| := by
+        apply add_le_add (le_refl _)
+        apply Finset.sum_le_sum
+        intro l hl
+        exact exp_one_lipschitz (s i l) (s j l) (by linarith) (by linarith)
+    _ = Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 * Real.exp 1 *∑l, |s i l - s j l| := by ring
+    _ = Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 * Real.exp 1 * (
+            |s i k - s j k|
+            +∑l (hl : l≠k), |s i l - s j l|) := by
+        have : |s i k - s j k|≥0 := by linarith
+        linarith
+    _≤Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 * Real.exp 1 * (
+            |s i k - s j k|
+            +∑l (hl : l≠k), 2 / Real.sqrt d) := by
+        apply add_le_add (le_refl _)
+        apply mul_le_mul_of_nonneg_left (add_le_add (le_refl _) _)
+        { linarith }
+        { apply Finset.sum_le_sum; intro l hl
+          calc |s i l - s j l|
+          _≤|s i l| + |s j l| := by linarith
+          _≤1 / Real.sqrt d + 1 / Real.sqrt d := by linarith
+          _ = 2 / Real.sqrt d := by ring }
+    _ = Real.exp 1 * |s i k - s j k|
+        + Real.exp 1 * Real.exp 1 * ((n - 1 : RE) * |s i k - s j k|
+            + (n - 1 : RE) * 2 / Real.sqrt d) := by
+        calc∑l (hl : l≠k), 2 / Real.sqrt d = (n-1 : RE) * (2/Real.sqrt d) := by
+          rw [Finset.sum_const]; ring
+        rfl
+    _≤(Real.exp 1 + Real.exp 1 * Real.exp 1) * |s i k - s j k|
+        + Real.exp 1 * Real.exp 1 * (n - 1 : RE) * 1 * |s i k - s j k| := by
+        -- d >= 4: 2/sqrt(d) <= 1. d < 4: use |s_ik-s_jk| >= 0.
+        have hn : (n - 1 : RE)≥0 := by linarith
+        have hss : |s i k - s j k|≥0 := by linarith
+        split_ tactic with hd
+        · have : 2 / Real.sqrt d≤1 := by
+            calc 2 / Real.sqrt d≤2 / Real.sqrt 4 := by linarith
+            _ = 1 := by norm_num
+          linarith
+        · linarith
+    _ = (Real.exp 1 + 2 * Real.exp 1 * Real.exp 1 * (n - 1 : RE)) * |s i k - s j k| := by ring
 
+  /--
+  - Le Chatelier 引理（score 差分的范数界）：
+  - |s_ik - s_jk| = |DOTv_i-v_j, v_k|/SQRT d≤NORMv_i - v_j‖/√d
+  - 由 Cauchy-Schwarz 和 NORMv_k‖= 1 推出。
+  /-
+  private lemma score_diff_bound
+    {n d : RE}
+    (v : Fin n -> EuclideanSpaceℝ(Fin d))
+    (hv : forall (i : Fin n), NORMv i‖= 1)
+    (i j k : Fin n) :
+    let s (p q : Fin n) := v p·v q / Real.sqrt d
+    |s i k - s j k|≤NORMv i - v j‖/ Real.sqrt d := by
+  let s := fun (p q : Fin n) => v p·v q / Real.sqrt d
+  have : s i k - s j k = (v i - v j)·v k / Real.sqrt d := by
+    calc (v i - v j)·v k = v i·v k - v j·v k := by rw [inner_sub_left]
+    _ = s i k - s j k := by rw [s, s]
+  calc
+  |s i k - s j k|
+  LE |(v i - v j)·v k| / Real.sqrt d := by rw [this]
+  LE NORMv i - v j‖* NORMv k‖/ Real.sqrt d := by apply abs_inner_le_norm_norm
+  = NORMv i - v j‖/ Real.sqrt d := by rw [hv k, one_mul]
 /--
 定理（n-token 对距离上界 — Lipschitz 证明）
 
@@ -279,7 +402,7 @@ private lemma softmax_diff_bound
 定义 softmax 自注意力：v_i' = Σⱼ α_ij · v_j
 
 则对任意 i≠j：
-  ‖v_i' - v_j'‖ ≤ (2ne/√d) · ‖v_i - v_j‖
+  ‖v_i' - v_j'‖ ≤ (2e·(1+2e·(n-1))/√d) · ‖v_i - v_j‖
 
 其中 e = exp 1。
 
@@ -298,7 +421,7 @@ theorem n_token_pairwise_contraction
     let v' (i : Fin n) : EuclideanSpace ℝ (Fin d) :=
       ∑ j : Fin n, α_fn i j • v j
     ∀ (i j : Fin n) (h_neq : i ≠ j),
-      ‖v' i - v' j‖ ≤ (2 * Real.exp 1 * (n : ℝ) / Real.sqrt d) * ‖v i - v j‖ := by
+      ‖v' i - v' j‖ ≤ (2 * Real.exp 1 * (1 + 2 * Real.exp 1 * (n - 1 : ℝ)) / Real.sqrt d) * ‖v i - v j‖ := by
   intros i j _
   let α := α_fn
 
@@ -320,8 +443,8 @@ theorem n_token_pairwise_contraction
       calc |α i k - α j k| * (‖v k‖ + ‖v j‖)
       _ ≤ |α i k - α j k| * 2 := by linarith [hv k, hv j]
   _ = 2 * ∑ k, |α i k - α j k|                   := by ring
-  _ ≤ 2 * ∑ k, Real.exp 1 / Real.sqrt d * ‖v i - v_j‖
-  _ ≤ 2 * ∑ k, (2 * Real.exp 1) * ‖v i - v_j‖ / Real.sqrt d := by
+  _ ≤ 2 * ∑ k, Real.exp 1 * (1 + 2 * Real.exp 1 * (n - 1 : ℝ)) / Real.sqrt d * ‖v i - v_j‖
+  _ ≤ 2 * ∑ k, (Real.exp 1 + 2 * Real.exp 1 * Real.exp 1 * (n - 1 : ℝ)) * ‖v i - v_j‖ / Real.sqrt d := by
       let s (p q : Fin n) := v p ⬝ v q / Real.sqrt d
       let D (p : Fin n) := ∑ l : Fin n, Real.exp (s p l)
       have : |Real.exp (s i k) / D i - Real.exp (s j k) / D j|
@@ -330,7 +453,7 @@ theorem n_token_pairwise_contraction
       have : |s i k - s j k| ≤ ‖v i - v_j‖ / Real.sqrt d := by
         exact score_diff_bound v hv i j k
       linarith
-  _ = 2 * (n : ℝ) * Real.exp 1 / Real.sqrt d * ‖v i - v j‖ := by
+  _ = 2 * Real.exp 1 * (1 + 2 * Real.exp 1 * (n - 1 : ℝ)) / Real.sqrt d * ‖v i - v j‖ := by
       have : ∑ k : Fin n, 1 = n := Finset.sum_const (m := 1); rwa [Finset.card_fin]
       ring
 
@@ -533,3 +656,6 @@ section Claims
 !/
 
 end Claims
+
+
+
