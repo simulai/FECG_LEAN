@@ -235,7 +235,32 @@ variable {n d : ℕ}
 private lemma exp_one_lipschitz (a b : ℝ)
     (ha : a ∈ Set.Icc (-1 : ℝ) 1) (hb : b ∈ Set.Icc (-1 : ℝ) 1) :
     |Real.exp a - Real.exp b| ≤ Real.exp 1 * |a - b| := by
-  sorry
+  -- MVT on [min(a,b), max(a,b)]
+  set L := Set.Icc (min a b) (max a b)
+  have hDiff : DifferentiableOn ℝ Real.exp (Set.Ioo (min a b) (max a b)) := by
+    apply DifferentiableOn.mono differentiableOn_exp
+    exact Set.Ioo_subset_Icc_self
+  have hCont : ContinuousOn Real.exp L := by
+    apply ContinuousAt.continuousOn
+    exact continuous Real.exp
+  have hSup (x : ℝ) (hx : x ∈ Set.Ioo (min a b) (max a b)) :
+      ‖deriv Real.exp x‖ ≤ Real.exp 1 := by
+    have : Real.exp x ≤ Real.exp 1 := by
+      apply Real.exp_le_exp.mpr
+      calc x ≤ max a b := by exact hx.2
+        _ ≤ 1 := by linarith [ha, hb]
+    have : 0 ≤ Real.exp x := by positivity
+    calc ‖deriv Real.exp x‖ = |deriv Real.exp x| : by rw [Real.norm_eq_abs]
+    _ = |Real.exp x| : by rw [deriv_exp]
+    _ = Real.exp x : by exact abs_of_nonneg this
+    _ ≤ Real.exp 1 : by exact this
+  have H := MVT.main' Real.exp hDiff hCont hSup
+  have : |Real.exp b - Real.exp a| ≤ Real.exp 1 * |b - a| := by
+    calc |Real.exp b - Real.exp a|
+    _ ≤ (sup x ∈ Set.Ioo (min a b) (max a b), ‖deriv Real.exp x‖) * |b - a| : by exact H
+    _ ≤ Real.exp 1 * |b - a| := by
+      apply mul_le_mul_of_nonneg_right _ (abs_nonneg _)
+      exact sup_le hSup
 private lemma softmax_diff_bound
     {n d : ℕ}
     (v : Fin n → EuclideanSpace ℝ (Fin d))
