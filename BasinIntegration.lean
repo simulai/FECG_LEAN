@@ -202,7 +202,12 @@ theorem basin_integration_stability
         exact (Real.sqrt_mul σ ε).symm
       rwa [← this]
     rwa [← this] at this
-  · same_constructor
+  -- 证明两个高斯分布的构造参数相同
+  · constructor
+    · -- 证明均值相同
+      simp [hμ]
+    · -- 证明协方差相同
+      simp [hΣ]
 
 end GeometricStability
 

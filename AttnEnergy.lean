@@ -89,9 +89,8 @@ lemma alpha_in_open_interval
     -- c/√d < 1/√d ≤ 1 < log 2 + 1/√d  (since log 2 > 0)
     have h_lt : c / Real.sqrt d < Real.log 2 + s := by
       have : c / Real.sqrt d ≤ 1 / Real.sqrt d := by
-        apply_div
-        · linarith
-        · nlinarith
+        apply (div_le_div_right (by positivity)).mpr
+        linarith
       have : 1 / Real.sqrt d < Real.log 2 + 1 / Real.sqrt d := by linarith [h_log2_pos]
       have : Real.log 2 + 1 / Real.sqrt d = Real.log 2 + s := by rw [s]
       linarith
