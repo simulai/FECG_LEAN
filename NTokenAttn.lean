@@ -68,12 +68,13 @@ lemma ntoken_alpha_upper_bound
   have h_num : 0 < num := by positivity
   have h_c_le_s : c_ij / Real.sqrt d ≤ s := by
     -- c_ij ≤ 1（LayerNorm），s = 1/√d ≥ c_ij/√d
-    have : c_ij ≤ 1 := by admit
+    have : c_ij ≤ 1 := by
+      -- c_ij = v_i ⬝ v_j ≤ ‖v_i‖ * ‖v_j‖ = 1 (Cauchy-Schwarz)
+      nlinarith [abs_le.mp (show |c_ij| ≤ 1 by nlinarith)]
     have : 0 < Real.sqrt d := by positivity
     calc c_ij / Real.sqrt d ≤ 1 / Real.sqrt d := by
-      apply_div
-      · linarith
-      · nlinarith
+      apply (div_le_div_right (by positivity)).mpr
+      linarith
     _ = s := by rw [s]
   have h_exp_ineq : num < 2 * Real.exp s := by
     have : c_ij / Real.sqrt d < Real.log 2 + s := by
@@ -143,23 +144,31 @@ lemma n_token_energy_zero
     -- Σ_{i,j} (if i<j then ‖v_i-v_j‖² else 0) = 0
     have : ∑ (i : Fin n) ∑ (j : Fin n), ite (i < j) (‖v i - v j‖ ^ 2) 0 = 0 := h'
     -- 每个 ite 的项都 ≥ 0，和为 0 → 所有 i<j 有 ‖v_i-v_j‖² = 0
-    have : ∀ (i j : Fin n), i < j → ‖v i - v j‖ ^ 2 = 0 := by
+    have h_all_zero : ∀ (i j : Fin n), i < j → ‖v i - v j‖ ^ 2 = 0 := by
       intro i j hij
-      have := Finset.sum_eq_zero _ ?_
-      swap
-      intro x hx
-      dsimp
-      split_ite
-      · exact this i j hij
-      · rfl
+      have h_nonneg : ∀ (x : Fin n × Fin n), 0 ≤ (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) := by
+        intro x
+        split_ifs
+        · exact sq_nonneg _
+        · exact le_refl _
+      have h_sum_zero : ∑ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) = 0 := by
+        rw [show ∑ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ))
+              = ∑ (i : Fin n) ∑ (j : Fin n), ite (i < j) (‖v i - v j‖ ^ 2) 0 by simp [Finset.sum_product]]
+        exact h'
+      have h_zero : ∀ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) = 0 := by
+        apply Finset.sum_eq_zero_iff_of_nonneg h_nonneg |>.mp
+        exact h_sum_zero
+      specialize h_zero (i, j)
+      simp [hij] at h_zero
+      exact h_zero
     -- 对所有 i≠j：‖v_i-v_j‖²=0 → v_i=v_j
     intro i j
     by_cases hij : i = j
     · rw [hij]
     · have hij' : i < j ∨ j < i := (Fin.lt_or_gt i j).resolve_left hij.symm
       cases hij'
-      · exact norm_eq_zero.mp (pow_eq_zero (this i j hij'))
-      · rw [eq_comm, norm_eq_zero.mp (pow_eq_zero (this j i hij'))]
+      · exact norm_eq_zero.mp (pow_eq_zero (h_all_zero i j hij'))
+      · rw [eq_comm, norm_eq_zero.mp (pow_eq_zero (h_all_zero j i hij'))]
   · intro h
     dsimp
     have : ∀ (i j : Fin n), ‖v i - v j‖ = 0 := by
@@ -300,7 +309,7 @@ private lemma softmax_diff_bound
   
     -- main proof
     calc
-      |ALPHA i k - ALPHA j k|
+      |α i k - α j k|
     _ = |Real.exp (s i k) / D i - Real.exp (s j k) / D j| := rfl
     _≤|Real.exp (s i k) / D i - Real.exp (s j k) / D i|
           + |Real.exp (s j k) / D i - Real.exp (s j k) / D j| := norm_triangle
@@ -354,23 +363,34 @@ private lemma softmax_diff_bound
           _≤1 / Real.sqrt d + 1 / Real.sqrt d := by linarith
           _ = 2 / Real.sqrt d := by ring }
     _ = Real.exp 1 * |s i k - s j k|
-        + Real.exp 1 * Real.exp 1 * ((n - 1 : RE) * |s i k - s j k|
-            + (n - 1 : RE) * 2 / Real.sqrt d) := by
-        calc∑l (hl : l≠k), 2 / Real.sqrt d = (n-1 : RE) * (2/Real.sqrt d) := by
-          rw [Finset.sum_const]; ring
+        + Real.exp 1 * Real.exp 1 * ((n - 1 : ℝ) * |s i k - s j k|
+            + (n - 1 : ℝ) * 2 / Real.sqrt d) := by
+        have : ∑ l, (if l ≠ k then (2 / Real.sqrt d : ℝ) else (0 : ℝ)) = (n - 1 : ℝ) * (2 / Real.sqrt d) := by
+          rw [Finset.sum_ite]
+          simp [Finset.filter_ne']
+          ring
+        simp [this]
         rfl
     _≤(Real.exp 1 + Real.exp 1 * Real.exp 1) * |s i k - s j k|
-        + Real.exp 1 * Real.exp 1 * (n - 1 : RE) * 1 * |s i k - s j k| := by
+        + Real.exp 1 * Real.exp 1 * (n - 1 : ℝ) * 1 * |s i k - s j k| := by
         -- d >= 4: 2/sqrt(d) <= 1. d < 4: use |s_ik-s_jk| >= 0.
-        have hn : (n - 1 : RE)≥0 := by linarith
-        have hss : |s i k - s j k|≥0 := by linarith
-        split_ tactic with hd
-        · have : 2 / Real.sqrt d≤1 := by
-            calc 2 / Real.sqrt d≤2 / Real.sqrt 4 := by linarith
-            _ = 1 := by norm_num
+        have hn : (n - 1 : ℝ) ≥ 0 := by linarith
+        have hss : |s i k - s j k| ≥ 0 := by linarith
+        by_cases hd : d ≥ 4
+        · have : 2 / Real.sqrt d ≤ 1 := by
+            have hsqrt : Real.sqrt d ≥ Real.sqrt 4 := Real.sqrt_le_sqrt (by linarith)
+            have hsqrt4 : Real.sqrt 4 = 2 := Real.sqrt_eq_cases.mpr (by norm_num)
+            have h2 : 2 / Real.sqrt d ≤ 2 / 2 := by
+              apply (div_le_div_left (by positivity) (by positivity) (by positivity)).mpr
+              linarith [hsqrt, hsqrt4]
+            linarith
           linarith
-        · linarith
-    _ = (Real.exp 1 + 2 * Real.exp 1 * Real.exp 1 * (n - 1 : RE)) * |s i k - s j k| := by ring
+        · -- d < 4 时，利用 |s_ik - s_jk| ≥ 0 和 2/sqrt(d) 有界
+          have h_d_lt_4 : d < 4 := by linarith
+          have h_sqrt_d_pos : 0 < Real.sqrt d := by positivity
+          have h_2_div_sqrt : 2 / Real.sqrt d > 0 := by positivity
+          nlinarith [abs_nonneg (s i k - s j k)]
+    _ = (Real.exp 1 + 2 * Real.exp 1 * Real.exp 1 * (n - 1 : ℝ)) * |s i k - s j k| := by ring
 
 /--
 引理（Le Chatelier 引理 — score 差分的范数界）：
@@ -467,11 +487,17 @@ theorem n_token_pairwise_contraction
       intro k hk
       exact score_diff_bound v hv i j k
   _ = 2 * (Real.exp 1 + 2 * Real.exp 1 * Real.exp 1 * (n - 1 : ℝ)) / Real.sqrt d * ‖v i - v j‖ * n := by
-      have : ∑ k : Fin n, 1 = n := Finset.sum_const (m := 1); rwa [Finset.card_fin]
+      have h1 : ∑ k : Fin n, (1 : ℝ) = (n : ℝ) := by
+        rw [Finset.sum_const]
+        simp [Finset.card_fin]
+        <;> ring
+      simp [h1]
       ring
   _ ≤ 2 * Real.exp 1 * (1 + 2 * Real.exp 1 * (n - 1 : ℝ)) / Real.sqrt d * ‖v i - v j‖ := by
+      have hn : (n : ℝ) ≥ 1 := by positivity
+      field_simp
       ring_nf
-      linarith
+      nlinarith [Real.exp_pos 1]
 
 /--
 引理（能量上界）：n-token softmax 下的能量不增
@@ -616,12 +642,16 @@ theorem n_token_attention_converges
   
   -- 由单调收敛定理，能量序列收敛
   have h_energy_converge : ∃ E_star, Tendsto (fun k => n_token_energy (iterate_attention v0 k)) Filter.atTop (𝓝 E_star) := by
-    apply Monotone.converges_to_of_nonempty_bddBelow
-    · intro k
-      exact h_energy_mono k
-    · use 0
+    have h_mono : Antitone (fun k => n_token_energy (iterate_attention v0 k)) := by
+      apply antitone_nat_of_succ_le
       intro k
+      exact h_energy_mono k
+    have h_bdd : BddBelow (Set.range (fun k => n_token_energy (iterate_attention v0 k))) := by
+      use 0
+      intro y hy
+      rcases hy with ⟨k, rfl⟩
       exact h_energy_bounded k
+    exact tendsto_atTop_ciInf h_mono h_bdd |> Exists.intro _
   
   -- 收缩因子 C = 2e(1+2e(n-1))/√d ≤ 1/n < 1
   have C := (2 * Real.exp 1 * (1 + 2 * Real.exp 1 * (n - 1 : ℝ)) / Real.sqrt d)
@@ -690,16 +720,19 @@ theorem n_token_attention_converges
   rcases h_energy_converge with ⟨E_star, h_E_conv⟩
   have h_E_star_zero : E_star = 0 := by
     have h_zero_le : 0 ≤ E_star := by
-      apply lim_le
-      · intro k; exact h_energy_bounded k
-      · exact h_E_conv
+      apply le_of_tendsto' h_E_conv
+      intro k; exact h_energy_bounded k
     have h_E_star_le_zero : E_star ≤ 0 := by
-      have : Tendsto (fun k => (C ^ 2) ^ k * n_token_energy v0) Filter.atTop (𝓝 0) := by
-        apply Tendsto.mul_const
-        exact tendsto_pow_atTop_nhds_0_of_lt_1 h_C2_lt_1
-      apply lim_le
-      · intro k; exact h_geo_bound k
-      · exact this
+      have h_geo_tendsto : Tendsto (fun k => (C ^ 2) ^ k * n_token_energy v0) Filter.atTop (𝓝 0) := by
+        have h1 : Tendsto (fun k => (C ^ 2) ^ k) Filter.atTop (𝓝 0) := by
+          apply tendsto_pow_atTop_nhds_0_of_lt_1
+          exact h_C2_lt_1
+        have h2 : Tendsto (fun k => (C ^ 2) ^ k * n_token_energy v0) Filter.atTop (𝓝 0 * n_token_energy v0) := by
+          apply Tendsto.mul_const
+          exact h1
+        simpa using h2
+      apply ge_of_tendsto' h_geo_tendsto
+      intro k; exact h_geo_bound k
     linarith
   
   -- 由能量收敛到 0，所有 token 收敛到同一极限
@@ -812,13 +845,19 @@ theorem n_token_attention_converges
     
     -- 取极限：L_i - L_j = 0
     have h_L_diff : L_i - L_j = 0 := by
-      have : Tendsto (fun k => iterate_attention v0 k i - iterate_attention v0 k j) Filter.atTop (𝓝 (L_i - L_j)) := by
+      have h1 : Tendsto (fun k => iterate_attention v0 k i - iterate_attention v0 k j) Filter.atTop (𝓝 (L_i - L_j)) := by
         apply Tendsto.sub
         exact h_conv_i
         exact h_conv_j
-      have : Tendsto (fun k => iterate_attention v0 k i - iterate_attention v0 k j) Filter.atTop (𝓝 0) := by
-        apply tendsto_zero_of_norm_tendsto_zero h_diff_conv
-      exact Tendsto.unique this (norm_zero_eq.mp h_diff_conv)
+      have h2 : Tendsto (fun k => iterate_attention v0 k i - iterate_attention v0 k j) Filter.atTop (𝓝 0) := by
+        have h3 : Tendsto (fun k => ‖iterate_attention v0 k i - iterate_attention v0 k j‖) Filter.atTop (𝓝 0) := h_diff_conv
+        have h4 : Tendsto (fun k => iterate_attention v0 k i - iterate_attention v0 k j) Filter.atTop (𝓝 (L_i - L_j)) := h1
+        -- 由范数收敛到 0，向量本身收敛到 0
+        have h5 : Tendsto (fun k => iterate_attention v0 k i - iterate_attention v0 k j) Filter.atTop (𝓝 0) := by
+          apply tendsto_nhds_of_tendsto_norm_nhds_zero
+          exact h_diff_conv
+        exact h5
+      exact Tendsto.unique h1 h2
     
     exact sub_eq_zero.mp h_L_diff
   
@@ -827,23 +866,28 @@ theorem n_token_attention_converges
   
   -- 极限 L 的范数为 1
   have h_L_norm : ‖L‖ = 1 := by
-    have : Tendsto (fun k => ‖iterate_attention v0 k 0‖) Filter.atTop (𝓝 ‖L‖) := by
-      apply norm_continuous.tendsto
-      exact (h_exists_limit 0).snd
-    have : Tendsto (fun k => 1) Filter.atTop (𝓝 1) := tendsto_const_nhds
-    have : Tendsto (fun k => ‖iterate_attention v0 k 0‖) Filter.atTop (𝓝 1) := by
-      rw [h_norm_preserve]
+    have h1 : Tendsto (fun k => ‖iterate_attention v0 k 0‖) Filter.atTop (𝓝 ‖L‖) := by
+      apply Continuous.tendsto
+      · exact continuous_norm
+      · exact (h_exists_limit 0).snd
+    have h2 : Tendsto (fun k => (1 : ℝ)) Filter.atTop (𝓝 1) := tendsto_const_nhds
+    have h3 : Tendsto (fun k => ‖iterate_attention v0 k 0‖) Filter.atTop (𝓝 1) := by
+      have h4 : ∀ k, ‖iterate_attention v0 k 0‖ = 1 := by
+        intro k
+        exact h_norm_preserve k 0
+      rw [show (fun k => ‖iterate_attention v0 k 0‖) = (fun k => (1 : ℝ)) by funext k; exact h4 k]
       exact tendsto_const_nhds
-    exact Tendsto.unique this (norm_continuous.tendsto (h_exists_limit 0).snd)
-  
+    exact Tendsto.unique h3 h1
+
   -- 所有 token 收敛到 L
   have h_all_converge : Tendsto (fun k => (fun i => iterate_attention v0 k i)) Filter.atTop (𝓝 (fun _ => L)) := by
-    apply Filter.Tendsto.pointwise
+    apply tendsto_pi_nhds.mpr
     intro i
-    have := (h_exists_limit i).snd
-    rw [h_all_L_equal i 0] at this
-    exact this
-  
+    have h_i := (h_exists_limit i).snd
+    have h_eq : L_i = L := h_all_L_equal i 0
+    rw [h_eq] at h_i
+    exact h_i
+
   exact ⟨L, h_L_norm, h_all_converge⟩
 
 /--
@@ -854,8 +898,9 @@ def iterate_attention {n d : ℕ}
   match k with
   | 0 => v
   | k + 1 =>
-    let α_fn (i j : Fin n) := Real.exp (v i ⬝ v j / Real.sqrt d) / ∑ l, Real.exp (v i ⬝ v l / Real.sqrt d)
-    fun i => ∑ j, α_fn i j • v j
+    let prev := iterate_attention v k
+    let α_fn (i j : Fin n) := Real.exp (prev i ⬝ prev j / Real.sqrt d) / ∑ l, Real.exp (prev i ⬝ prev l / Real.sqrt d)
+    fun i => ∑ j, α_fn i j • prev j
 
 end NTokenConvergence
 
@@ -917,13 +962,42 @@ lemma attractor_manifold_energy_zero
     · rw [hij]
     · have hij' : i < j ∨ j < i := (Fin.lt_or_gt i j).resolve_left hij.symm
       cases hij'
-      all_goals (
-        have := Finset.sum_eq_zero _ ?_;
-        swap; intro x hx; dsimp; split_ite
-        <;> try rfl
-      )
-      · exact norm_eq_zero.mp (pow_eq_zero (this i j hij'))
-      · rw [eq_comm, norm_eq_zero.mp (pow_eq_zero (this j i hij'))]
+      · -- i < j 的情况
+        have h_zero : ‖v i - v j‖ ^ 2 = 0 := by
+          have h_nonneg : ∀ (x : Fin n × Fin n), 0 ≤ (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) := by
+            intro x
+            split_ifs
+            · exact sq_nonneg _
+            · exact le_refl _
+          have h_sum_zero : ∑ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) = 0 := by
+            rw [show ∑ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ))
+                  = ∑ (i : Fin n) ∑ (j : Fin n), ite (i < j) (‖v i - v j‖ ^ 2) 0 by simp [Finset.sum_product]]
+            exact h'
+          have h_all_zero : ∀ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) = 0 := by
+            apply Finset.sum_eq_zero_iff_of_nonneg h_nonneg |>.mp
+            exact h_sum_zero
+          specialize h_all_zero (i, j)
+          simp [hij'] at h_all_zero
+          exact h_all_zero
+        exact norm_eq_zero.mp (pow_eq_zero h_zero)
+      · -- j < i 的情况
+        have h_zero : ‖v j - v i‖ ^ 2 = 0 := by
+          have h_nonneg : ∀ (x : Fin n × Fin n), 0 ≤ (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) := by
+            intro x
+            split_ifs
+            · exact sq_nonneg _
+            · exact le_refl _
+          have h_sum_zero : ∑ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) = 0 := by
+            rw [show ∑ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ))
+                  = ∑ (i : Fin n) ∑ (j : Fin n), ite (i < j) (‖v i - v j‖ ^ 2) 0 by simp [Finset.sum_product]]
+            exact h'
+          have h_all_zero : ∀ (x : Fin n × Fin n), (if x.1 < x.2 then ‖v x.1 - v x.2‖ ^ 2 else (0 : ℝ)) = 0 := by
+            apply Finset.sum_eq_zero_iff_of_nonneg h_nonneg |>.mp
+            exact h_sum_zero
+          specialize h_all_zero (j, i)
+          simp [hij'] at h_all_zero
+          exact h_all_zero
+        rw [eq_comm, norm_eq_zero.mp (pow_eq_zero h_zero)]
 
 /--
 引理：对角线流形是注意力不变集
