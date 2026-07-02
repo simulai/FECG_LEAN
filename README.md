@@ -3,115 +3,90 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Lean 4](https://img.shields.io/badge/Lean-4-8957e5?style=flat)](https://leanprover.github.io)
-[![Mathlib](https://img.shields.io/badge/Mathlib-latest-ea8805?style=flat)](https://mathlib.harrywu.ml)
+[![Mathlib](https://img.shields.io/badge/Mathlib-latest-ea8805?style=flat)](https://github.com/leanprover-community/mathlib4)
 
-**EN**: This repository provides machine-verified (Lean 4 + Mathlib) proofs of attractor dynamics in neural networks — the theoretical foundation of [Thermodynamic AGI (ASI)](https://github.com/simulai/ASI).
-
-**ZH**: 本仓库提供神经网络吸引子动力学的机器验证（Lean 4 + Mathlib）形式化证明——[热力学解析智能 (ASI)](https://github.com/simulai/ASI) 的理论基础。
+> **Part of the [Epistemic Axiomatic System (EAS)](https://github.com/simulai/EAS-ML-Foundation)**
+>
+> This repo provides the **dynamical systems proof layer**: within the epistemic bounds defined by EAS, attention dynamics provably converge to attractors.
 
 ---
 
-## 📖 Overview / 概述
+## 📖 Overview
 
 | EN | ZH |
 |----|----|
 | Every intelligent system minimizes free energy — this is a **physical law**, not a metaphor. | 任何智能系统都在最小化自由能——这是**物理定律**，不是比喻。 |
 | FECG_LEAN proves this mathematically: energy bounded + monotone decreasing → attractor exists. | FECG_LEAN 用数学证明：能量有下界 + 单调不增 → 吸引子存在。 |
-| This is the **formal foundation** for Paper 2: Thermodynamic Foundations of Non-QKV Attention. | 这是 **Paper 2（热力学基础）** 的形式化基础。 |
+| Softmax attention = Gibbs distribution = Helmholtz free energy minimization. | Softmax 注意力 = Gibbs 分布 = Helmholtz 自由能最小化。 |
 
 ---
 
 ## 📁 Lean 4 Source Files
 
-| File | Key Definitions & Theorems |
-|------|---------------------------|
-| **`FECG_LEAN.lean`** | `energy_antitone`, `energy_convergent`, `fixed_point_of_limit` |
-| **`Composite.lean`** | `composite_energy_converges`, `composite_limit_is_fixed_point`, `async_energy_converges`, `robust_async_energy_converges` |
-| **`MultiModal.lean`** | `joint_energy_converges`, `attractor_exists_on_compact`, `lasalle_stability` |
-| **`lakefile.lean`** | Project configuration + Mathlib dependency |
-| **`report.md`** | Full theory documentation (Chinese) |
+| File | Key Definitions & Theorems | Status |
+|------|---------------------------|--------|
+| **`FECG_LEAN.lean`** | `energy_antitone`, `energy_convergent`, `fixed_point_of_limit` | ✅ Complete |
+| **`Composite.lean`** | `composite_energy_converges`, `async_energy_converges`, `robust_async_energy_converges` | ✅ Complete |
+| **`MultiModal.lean`** | `joint_energy_converges`, `attractor_exists_on_compact`, `lasalle_stability` | ✅ Complete |
+| **`AttnEnergy.lean`** | `two_token_attention_contract` — attention distance contraction | ✅ Complete |
+| **`NTokenAttn.lean`** | n-token Lyapunov dynamics, contraction factor independent of n | 🔄 In progress |
+| **`BasinIntegration.lean`** | KL divergence ↔ geometric proximity in Gaussian basins | 🔄 In progress |
+| **`HelmholtzAttention.lean`** | `helmholtz_identity`, `softmax_as_gibbs`, `attention_free_energy_min`, `landauer_bound` | ✅ Complete |
+| **`ScaleOperator.lean`** | Micro-macro bridge operator S, topological invariance + energy decrease | ✅ Complete |
 
 ---
 
 ## 🔬 Core Theorems
 
-### FECG_LEAN.lean — Single-Modal Attractor Dynamics
+### Attractor Dynamics (FECG_LEAN.lean)
+- Energy sequence is monotone non-increasing → converges to infimum
+- If orbit converges, limit is a fixed point
 
-```lean
--- Energy sequence is monotone non-increasing
-theorem energy_antitone {F E} [ContF] [ContE] (x0 : State) :
-  Antitone (fun k => E (orbit F x0 k))
+### Thermodynamic Attention (HelmholtzAttention.lean)
+- **F = ⟨E⟩ − (1/β)·S** — Helmholtz free energy identity for attention
+- Softmax = Gibbs distribution → attention minimizes free energy
+- Zero-temperature limit: attention → argmin energy (greedy)
+- Landauer bound: minimum computational dissipation
 
--- Energy converges to its infimum
-theorem energy_convergent {F E} [ContF] [ContE] (x0 : State) :
-  Tendsto (fun k => E (orbit F x0 k)) atTop (𝓝 (⨅ k, E (orbit F x0 k)))
+### Scale Operator (ScaleOperator.lean)
+- Bridge operator $\mathcal{S}$ maps micro-dynamics to macro-dynamics
+- Preserves topological invariants + free energy decrease
+- Micro → macro convergence theorem
 
--- If orbit converges, limit is a fixed point
-theorem fixed_point_of_limit {F E} [ContF] [ContE]
-  (x0 : State) (x* : State) (h_lim : Tendsto (orbit F x0) atTop (𝓝 x*)) :
-  F x* = x*
-```
-
-### Composite.lean — Composite Architecture, Async Updates
-
-```lean
--- Total energy converges under async updates
-theorem async_energy_converges {n} {F : State n → State n}
-  (hE_bounded : ∀i, 0 ≤ E_i i (X i)))
-  (hE_descent : ∀i, E_i i (F_i (X i)) ≤ E_i i (X i))) :
-  Tendsto (fun t => E_total (X t)) atTop (𝓝 (⨅ t, E_total (X t)))
-
--- Robust convergence under bounded noise
-theorem robust_async_energy_converges
-  (h_noise : Summable (fun k => ‖ε_k‖)) :
-  Tendsto (fun t => E_total (X t + ε_t)) atTop (𝓝 (⨅ t, E_total (X t + ε_t)))
-```
+### Attention Contraction (AttnEnergy + NTokenAttn)
+- Two-token: distance contracts by factor $(1 - 2\alpha)$ per step
+- N-token: contraction factor independent of token count $n$
+- Geometric convergence to attractor
 
 ---
 
-## 🚀 Running the Proofs / 运行证明
+## 🚀 Running the Proofs
 
 ```bash
-# Install Lean 4 via elan
-elan init
-elan override leanprover--lean4:4.19.0
+# Install Lean 4
+curl -sSL https://github.com/leanprover/elan/releases/latest/download/elan-init.sh | sh
 
-# Build (requires ~10 GB RAM + mathlib)
+# Clone and build
+git clone https://github.com/simulai/FECG_LEAN.git
+cd FECG_LEAN
 lake build
-
-# Or open in VS Code + Lean 4 extension
-code .
 ```
 
 ---
 
-## 🔗 Connection to ASI / 与热力学解析智能的关联
+## 📐 Relationship to EAS
 
-| Lean4 Theorem | Thermodynamic AGI Meaning |
-|--------------|--------------------------|
-| `energy_convergent` | Free energy F is monotone decreasing → always converges (H1/H2) |
-| `fixed_point_of_limit` | Attractor = dynamical fixed point (H2/H3) |
-| `composite_energy_converges` | Multiple CLFA systems → total energy converges (H5) |
-| `robust_async_energy_converges` | Noisy/distributed MetaGate → still converges (H4) |
-| `async_limit_is_fixed` | Async multi-agent limit = consistent state (L4/L5) |
+| Layer | Repo | What it proves |
+|-------|------|----------------|
+| **Epistemic bounds** | [EAS-ML-Foundation](https://github.com/simulai/EAS-ML-Foundation) | $S \subset E \implies R_S \not\cong E$ — perfect self-modeling impossible |
+| **Dynamical convergence** | **FECG_LEAN** (this repo) | Attention dynamics provably converge within epistemic bounds |
 
-**Physical meaning**: These are not heuristics. They are **theorems**.
-If the premises hold (continuous dynamics + bounded energy + monotone descent),
-the conclusions **must** follow.
+EAS defines **what cognition cannot do**. FECG_LEAN proves **what attention dynamics do within those bounds**.
 
 ---
 
-## 📚 Key References
+## Author
 
-| Paper | Link |
-|-------|------|
-| Landauer 1961 (irreversibility) | https://doi.org/10.1147/rd.53.0163 |
-| Hopfield 1982 (energy networks) | https://doi.org/10.1073/pnas.79.8.2554 |
-| Friston 2010 (Free Energy Principle) | https://doi.org/10.1038/nrn2787 |
-| Full bibliography (ASI repo) | https://github.com/simulai/ASI/blob/main/02_theory/references.md |
-
----
-
-## ⚖️ License
-
-MIT License — free to use, build on, argue with.
+**Jing Zhang** — Independent Researcher  
+ORCID: [0009-0008-3136-2457](https://orcid.org/0009-0008-3136-2457)  
+GitHub: [@simulai](https://github.com/simulai)
